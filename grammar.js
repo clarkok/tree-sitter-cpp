@@ -84,6 +84,11 @@ module.exports = grammar(C, {
     [$.initializer_pair, $.comma_expression],
     [$.expression_statement, $._for_statement_body],
     [$.init_statement, $._for_statement_body],
+
+    [$.enum_specifier],
+    [$.class_specifier],
+    [$.struct_specifier],
+    [$.union_specifier],
   ],
 
   inline: ($, original) => original.concat([
@@ -109,6 +114,10 @@ module.exports = grammar(C, {
       alias($.constructor_or_destructor_definition, $.function_definition),
       alias($.operator_cast_definition, $.function_definition),
       alias($.operator_cast_declaration, $.declaration),
+      $.module_declaration,
+      $.module_fragment_declaration,
+      $.import_declaration,
+      $.export_block,
     ),
 
     _block_item: ($, original) => choice(
@@ -124,6 +133,54 @@ module.exports = grammar(C, {
       alias($.constructor_or_destructor_definition, $.function_definition),
       alias($.operator_cast_definition, $.function_definition),
       alias($.operator_cast_declaration, $.declaration),
+      $.export_block,
+    ),
+
+    // Modules
+
+    export_specifier: _ => 'export',
+
+    _module_name: $ => alias($.identifier, $.module_name),
+    module_qualified_name: $ => seq(
+      $._module_name,
+      repeat(seq('.', $._module_name)),
+    ),
+
+    module_partition: $ => seq(':', $._module_name),
+
+    module_declaration: $ => seq(
+      optional($.export_specifier),
+      'module',
+      $.module_qualified_name,
+      optional($.module_partition),
+      optional($.attribute_declaration),
+      ';'
+    ),
+
+    module_access_specifier: _ => seq(':', 'private'),
+    module_fragment_declaration: $ => seq(
+      'module',
+      optional(alias($.module_access_specifier, $.access_specifier)),
+      ';',
+    ),
+
+    import_declaration: $ => seq(
+      optional($.export_specifier),
+      'import',
+      field('name', choice(
+        $.module_qualified_name,
+        $.module_partition,
+        $.string_literal,
+        $.system_lib_string,
+        alias($.preproc_call_expression, $.call_expression)
+      )),
+      optional($.attribute_declaration),
+      ';'
+    ),
+
+    export_block: $ => seq(
+      $.export_specifier,
+      field('body', $.declaration_list)
     ),
 
     // Types
@@ -196,16 +253,19 @@ module.exports = grammar(C, {
     )),
 
     class_specifier: $ => seq(
+      optional($.export_specifier),
       'class',
       $._class_declaration,
     ),
 
     union_specifier: $ => seq(
+      optional($.export_specifier),
       'union',
       $._class_declaration,
     ),
 
     struct_specifier: $ => seq(
+      optional($.export_specifier),
       'struct',
       $._class_declaration,
     ),
@@ -216,15 +276,24 @@ module.exports = grammar(C, {
       alias($.qualified_type_identifier, $.qualified_identifier),
     )),
 
-    function_definition: ($, original) => ({
-      ...original,
-      members: original.members.map(
-        (e) => e.name !== 'body' ?
-          e :
-          field('body', choice(e.content, $.try_statement))),
-    }),
+    function_definition: ($, original) => seq(
+      optional($.export_specifier),
+      {
+        ...original,
+        members: original.members.map(
+          (e) => e.name !== 'body' ?
+            e :
+            field('body', choice(e.content, $.try_statement))),
+      },
+    ),
+
+    linkage_specification: ($, original) => seq(
+      optional($.export_specifier),
+      original,
+    ),
 
     declaration: $ => seq(
+      optional($.export_specifier),
       $._declaration_specifiers,
       commaSep1(field('declarator', choice(
         seq(
@@ -236,6 +305,11 @@ module.exports = grammar(C, {
         $.init_declarator,
       ))),
       ';',
+    ),
+
+    type_definition: ($, original) => seq(
+      optional($.export_specifier),
+      original,
     ),
 
     virtual_specifier: _ => choice(
@@ -283,6 +357,7 @@ module.exports = grammar(C, {
     ),
 
     enum_specifier: $ => prec.right(seq(
+      optional($.export_specifier),
       'enum',
       optional(choice('class', 'struct')),
       choice(
@@ -320,6 +395,7 @@ module.exports = grammar(C, {
     // Declarations
 
     template_declaration: $ => seq(
+      optional($.export_specifier),
       'template',
       field('parameters', $.template_parameter_list),
       optional($.requires_clause),
@@ -339,6 +415,7 @@ module.exports = grammar(C, {
     ),
 
     template_instantiation: $ => seq(
+      optional($.export_specifier),
       'template',
       optional($._declaration_specifiers),
       field('declarator', $._declarator),
@@ -712,6 +789,7 @@ module.exports = grammar(C, {
     ),
 
     namespace_definition: $ => seq(
+      optional($.export_specifier),
       optional('inline'),
       'namespace',
       optional($.attribute_declaration),
@@ -724,6 +802,7 @@ module.exports = grammar(C, {
     ),
 
     namespace_alias_definition: $ => seq(
+      optional($.export_specifier),
       'namespace',
       field('name', $._namespace_identifier),
       '=',
@@ -749,6 +828,7 @@ module.exports = grammar(C, {
     )),
 
     using_declaration: $ => seq(
+      optional($.export_specifier),
       'using',
       optional(choice('namespace', 'enum')),
       choice(
@@ -759,6 +839,7 @@ module.exports = grammar(C, {
     ),
 
     alias_declaration: $ => seq(
+      optional($.export_specifier),
       'using',
       field('name', $._type_identifier),
       repeat($.attribute_declaration),
